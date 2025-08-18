@@ -1,5 +1,5 @@
 module.exports = {
-  owners: ["1390612289991872572", "987654321098765432"], // your owner IDs here
+  owners: ["1390612289991872572", ""], // your owner IDs here
   prefix: "!", // global command prefix
 
   // Helper to check if user is owner
