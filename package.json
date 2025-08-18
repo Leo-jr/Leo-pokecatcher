@@ -1,0 +1,30 @@
+{
+  "name": "leo-pokecatcher",
+  "version": "1.0.0",
+  "description": "Pokétwo selfbot with modular events for catching, captcha detection, and optional spam.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "chalk": "^4.1.2",
+    "date-and-time": "^2.4.1",
+    "discord.js-selfbot-v13": "^3.3.0",
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "pokehint": "^1.4.13"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "discord",
+    "poketwo",
+    "selfbot",
+    "catcher",
+    "captcha"
+  ],
+  "author": "",
+  "license": "MIT"
+}
