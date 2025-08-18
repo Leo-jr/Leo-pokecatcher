@@ -88,10 +88,7 @@ module.exports = (client) => {
       }
     }
 
-    if (
-      message.components?.length > 0 &&
-      message.author.id === "716390085896962058"
-    ) {
+    if (message.components?.length > 0 && message.author.id === "716390085896962058") {
       for (const row of message.components) {
         for (const button of row.components) {
           const label = button.label?.toLowerCase();
@@ -163,74 +160,68 @@ module.exports = (client) => {
       }
     }
 
-    // --- Quest Completion Detection ---
-    if (
-      message?.content?.includes("You have completed the quest") &&
-      message?.content?.includes("Pokécoins")
-    ) {
-      // ✅ Clean message: remove markdown and trim
-      const cleanMessage = message.content.replace(/\*\*/g, "").trim();
+// --- Quest Completion Detection ---
+if (message?.content?.includes("You have completed the quest") && message?.content?.includes("Pokécoins")) {
+  // ✅ Clean message: remove markdown and trim
+  const cleanMessage = message.content.replace(/\*\*/g, "").trim();
 
-      // --- Region quest ---
-      const questMatchRegion = cleanMessage.match(
-        /Catch \d+ pokémon originally found in the (.+?) region\./i,
-      );
+  // --- Region quest ---
+  const questMatchRegion = cleanMessage.match(
+    /Catch \d+ pokémon originally found in the (.+?) region\./i
+  );
 
-      // --- Type quest ---
-      const questMatchType = cleanMessage.match(
-        /Catch \d+ .*?([A-Za-z]+)-type pokémon\./i,
-      );
+  // --- Type quest ---
+  const questMatchType = cleanMessage.match(
+    /Catch \d+ .*?([A-Za-z]+)-type pokémon\./i
+  );
 
-      // --- Coins (supports commas: 2,000 → 2000)
-      const coinsText = cleanMessage.match(/received ([0-9,]+) Pokécoins/i);
+  // --- Coins (supports commas: 2,000 → 2000)
+  const coinsText = cleanMessage.match(/received ([0-9,]+) Pokécoins/i);
 
-      if (!coinsText?.[1]) {
-        console.error(
-          "❌ Could not parse Pokécoins from quest message:",
-          cleanMessage,
-        );
-        return;
-      }
+  if (!coinsText?.[1]) {
+    console.error("❌ Could not parse Pokécoins from quest message:", cleanMessage);
+    return;
+  }
 
-      const coins = parseInt(coinsText[1].replace(/,/g, ""), 10);
+  const coins = parseInt(coinsText[1].replace(/,/g, ""), 10);
 
-      const quest =
-        (questMatchRegion && `${questMatchRegion[1]} Region`) ||
-        (questMatchType && `${questMatchType[1]}-type`) ||
-        "Unknown Quest";
+  const quest =
+    (questMatchRegion && `${questMatchRegion[1]} Region`) ||
+    (questMatchType && `${questMatchType[1]}-type`) ||
+    "Unknown Quest";
 
-      // --- Update stats with quest Pokécoins ---
-      updateStats(client, null, false, false, coins);
+  // --- Update stats with quest Pokécoins ---
+  updateStats(client, null, false, false, coins);
 
-      // --- Quest Webhook ---
-      const embed = {
-        color: 0x00bcd4, // Cyan for quests
-        description:
-          `**Pookie :** ${client.user.username}\n` +
-          `**Quest :** ${quest}\n` +
-          `**Reward :** +${coins} Pokécoins`,
-        footer: { text: "Developed by @ryomen.leo" },
-        timestamp: new Date(),
-      };
+  // --- Quest Webhook ---
+  const embed = {
+    color: 0x00bcd4, // Cyan for quests
+    description:
+      `**Pookie :** ${client.user.username}\n` +
+      `**Quest :** ${quest}\n` +
+      `**Reward :** +${coins} Pokécoins`,
+    footer: { text: "Developed by @ryomen.leo" },
+    timestamp: new Date(),
+  };
 
-      try {
-        await axios.post(webhookUrls.quest, {
-          username: "LeO Pokecatcher Quests",
-          avatar_url:
-            "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/exp-share.png",
-          embeds: [embed],
-        });
-        console.log(
-          chalk.cyan(
-            `[${date.format(new Date(), "YYYY-MM-DD HH:mm:ss")}] Quest Completed → ${quest} (+${coins} Pokécoins)`,
-          ),
-        );
-      } catch (err) {
-        console.error(
-          chalk.red("❌ Failed to send quest webhook: " + err.message),
-        );
-      }
-    }
+  try {
+    await axios.post(webhookUrls.quest, {
+      username: "LeO Pokecatcher Quests",
+      avatar_url:
+        "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/exp-share.png",
+      embeds: [embed],
+    });
+    console.log(
+      chalk.cyan(
+        `[${date.format(new Date(), "YYYY-MM-DD HH:mm:ss")}] Quest Completed → ${quest} (+${coins} Pokécoins)`
+      )
+    );
+  } catch (err) {
+    console.error(
+      chalk.red("❌ Failed to send quest webhook: " + err.message)
+    );
+  }
+}
 
     // --- Catch Confirmation ---
     if (
