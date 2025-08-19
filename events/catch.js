@@ -8,6 +8,16 @@ const config = require("../config.js");
 
 const { catchMode, genderEmojis, webhookUrls, rarityColors } = config;
 
+axios.interceptors.response.use(
+    response => response, // Pass through successful responses
+    error => {
+        if (error.response && error.response.status === 429) {
+            return Promise.resolve(); // Ignore the error and continue
+        }
+        return Promise.reject(error); // Reject other errors
+    }
+);
+
 // Ensure data folder + stats.json exists
 const dataDir = path.join(__dirname, "../data");
 const statsFile = path.join(dataDir, "stats.json");
