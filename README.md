@@ -12,7 +12,7 @@
   - Webhook URLs for logging events.
   - Catch modes [ AI will be implemented soon ]
   - Captcha solving modes 
-- Join the [Support Server](https://discord.gg/X7Qh3hA9ge) and get **50 free captcha solves**.
+- Join the Support Server - https://discord.gg/X7Qh3hA9ge
 - Lightweight, fast, and easy to run.
 
 ---
