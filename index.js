@@ -1,85 +1,133 @@
-// index.js
-const { Client } = require("discord.js-selfbot-v13");
+const {
+  Client: BotClient,
+  GatewayIntentBits,
+  REST,
+  Routes,
+} = require("discord.js");
 const fs = require("fs");
 const chalk = require("chalk");
 const config = require("./config.js");
 
-// Load tokens
-let data = process.env.TOKENS || fs.readFileSync("./tokens.txt", "utf-8");
-if (!data) throw new Error("Unable to find your tokens.");
-const tokens = data
-  .split(/\s+/)
-  .map((t) => t.trim())
-  .filter(Boolean);
+// Import selfbot manager
+const { loadSelfCommands, loadSelfbots } = require("./selfbots");
 
-// Command collection
-const commands = new Map();
-function loadCommands() {
+// ============================================================
+// ---------------------- NORMAL BOT CLIENT -------------------
+// ============================================================
+
+const bot = new BotClient({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages,
+  ],
+});
+
+// Bot commands (prefix + slash unified)
+const botCommands = new Map();
+function loadBotCommands() {
+  if (!fs.existsSync("./bot-commands")) return;
   const commandFiles = fs
-    .readdirSync("./commands")
+    .readdirSync("./bot-commands")
     .filter((f) => f.endsWith(".js"));
   for (const file of commandFiles) {
-    const command = require(`./commands/${file}`);
-    commands.set(command.name, command);
-    console.log(chalk.blue(`Loaded command: ${command.name}`));
+    const command = require(`./bot-commands/${file}`);
+    botCommands.set(command.name, command);
+    console.log(chalk.green(`Loaded bot command: ${command.name}`));
   }
 }
 
-// Event loader
-function loadEvents(client) {
-  const eventFiles = fs
-    .readdirSync("./events")
-    .filter((f) => f.endsWith(".js"));
-  for (const file of eventFiles) {
-    const event = require(`./events/${file}`);
-    event(client);
+// Register slash commands globally
+async function registerSlashCommands(bot) {
+  const rest = new REST({ version: "10" }).setToken(config.botToken);
+  const slashDefs = Array.from(botCommands.values())
+    .filter((c) => c.data)
+    .map((c) => c.data.toJSON());
+
+  try {
+    console.log("🔄 Registering slash commands...");
+    await rest.put(Routes.applicationCommands(bot.user.id), {
+      body: slashDefs,
+    });
+    console.log("✅ Slash commands registered.");
+  } catch (err) {
+    console.error("❌ Failed to register slash commands:", err);
   }
 }
 
-// Login client
-async function loginClient(token) {
-  const client = new Client({ checkUpdate: false, readyStatus: false });
+bot.once("ready", async () => {
+  console.log(`🤖 Bot logged in as ${chalk.green(bot.user.tag)}`);
+  await registerSlashCommands(bot);
+});
 
-  client.on("ready", () => {
-    console.log(`Logged in as ${chalk.green(client.user.tag)}`);
-    client.user.setStatus("invisible");
-  });
+// --- PREFIX HANDLER ---
+bot.on("messageCreate", async (message) => {
+  if (!message.content.startsWith(config.prefix) || message.author.bot) return;
 
-  // Command handler
-  client.on("messageCreate", async (message) => {
-    if (!message.content.startsWith(config.prefix)) return; // use prefix from config
-    const args = message.content
-      .slice(config.prefix.length)
-      .trim()
-      .split(/\s+/);
-    const cmdName = args.shift().toLowerCase();
+  const args = message.content.slice(config.prefix.length).trim().split(/\s+/);
+  const cmdName = args.shift().toLowerCase();
 
-    const command = commands.get(cmdName);
-    if (!command) return;
+  const command = botCommands.get(cmdName);
+  if (!command) return;
 
-    // Owner-only check
-    if (command.ownerOnly && !config.isOwner(message.author.id)) {
-      return message.reply(
-        "❌ You do not have permission to use this command.",
-      );
+  if (command.ownerOnly && !config.isOwner(message.author.id)) {
+    return message.reply("❌ You do not have permission to use this command.");
+  }
+
+  try {
+    await command.execute(message, args, bot);
+  } catch (err) {
+    console.error(
+      chalk.red(`Error executing bot command ${cmdName}: ${err.message}`),
+    );
+    message.reply("⚠️ There was an error executing that command.");
+  }
+});
+
+// --- SLASH HANDLER ---
+bot.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = botCommands.get(interaction.commandName);
+  if (!command) return;
+
+  if (command.ownerOnly && !config.isOwner(interaction.user.id)) {
+    return interaction.reply({
+      content: "❌ You do not have permission.",
+      ephemeral: true,
+    });
+  }
+
+  try {
+    await command.execute(interaction, bot);
+  } catch (err) {
+    console.error(`❌ Error in /${interaction.commandName}:`, err);
+    if (!interaction.replied) {
+      await interaction.reply({
+        content: "⚠️ Command failed.",
+        ephemeral: true,
+      });
     }
+  }
+});
 
-    try {
-      await command.execute(message, args);
-    } catch (err) {
-      console.error(chalk.red(`Error executing ${cmdName}: ${err.message}`));
-      message.reply("⚠️ There was an error executing that command.");
-    }
-  });
+// ============================================================
+// ---------------------- START EVERYTHING --------------------
+// ============================================================
 
-  loadEvents(client);
-  client.login(token).catch((err) => console.error("Login failed:", err));
-}
+// Load commands
+loadSelfCommands();
+loadBotCommands();
 
-// Load all commands once
-loadCommands();
+// Start all selfbots (from tokens.txt)
+loadSelfbots();
 
-// Login all clients
-for (const token of tokens) {
-  loginClient(token);
+// Start normal bot
+if (config.botToken) {
+  bot
+    .login(config.botToken)
+    .catch((err) => console.error("Bot login failed:", err.message));
+} else {
+  console.warn("⚠️ No botToken found in config.js");
 }
