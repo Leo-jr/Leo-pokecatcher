@@ -2,6 +2,8 @@ module.exports = {
   owners: ["1390612289991872572", ""], // your owner IDs here
   prefix: "!", // global command prefix
 
+  botToken: "your-discord-bot-token",
+
   // Helper to check if user is owner
   isOwner(id) {
     return this.owners.includes(id);
