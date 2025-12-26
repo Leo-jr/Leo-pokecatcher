@@ -5,10 +5,10 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const https = require("https");
-const config = require("../config.js");
 
+const config = require("../config.js");
 const { captcha: captchaConfig, webhookUrls } = config;
-const { licenseKey, API_URL, shuApiKey, shuHostname, mode } = captchaConfig;
+const { licenseKey, API_URL, shuApiKey, shuHostname, momentoLicenseKey, mode } = captchaConfig;
 
 // File paths
 const statsFile = path.join(__dirname, "../data/stats.json");
@@ -28,6 +28,7 @@ function loadJSON(file) {
     return {};
   }
 }
+
 function saveJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
@@ -36,10 +37,10 @@ function saveJSON(file, data) {
 function initCaptchaStats(clientId, username) {
   const captchaStats = loadJSON(captchaStatsFile);
   const stats = loadJSON(statsFile);
-
   if (!captchaStats[clientId]) {
     captchaStats[clientId] = { username, detected: 0, solved: 0, failed: 0 };
   }
+
   if (!stats[clientId]) {
     stats[clientId] = {
       username,
@@ -59,7 +60,6 @@ function initCaptchaStats(clientId, username) {
 function updateCaptchaStats(clientId, updater) {
   const captchaStats = loadJSON(captchaStatsFile);
   const stats = loadJSON(statsFile);
-
   if (!captchaStats[clientId] || !stats[clientId]) return;
   updater(captchaStats[clientId], stats[clientId]);
   saveJSON(captchaStatsFile, captchaStats);
@@ -70,11 +70,9 @@ function updateCaptchaStats(clientId, updater) {
 function solveCaptchaShu(apiKey, userId, token, hostname) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({ userId, token });
-
     let host = hostname;
     let port = 443;
     let useHttps = true;
-
     if (hostname.includes(":")) {
       const parts = hostname.split(":");
       host = parts[0];
@@ -141,6 +139,39 @@ async function solveCaptchaLeo(token, clientId) {
   }
 }
 
+// --- Momento Mode Solver ---
+const MOMENTO_AGENT = new https.Agent({ rejectUnauthorized: false });
+
+async function solveCaptchaMomento(token, userId, licenseKey) {
+  try {
+    const momentoUrl = "http://DE-1.momentohost.online:1080/solve-captcha";
+    const response = await axios.post(
+      momentoUrl,
+      { token, uid: userId },
+      {
+        headers: { "x-license-key": licenseKey },
+        httpsAgent: MOMENTO_AGENT,
+        timeout: 65000,
+      },
+    );
+
+    const { status } = response.data || {};
+    
+    if (status === true) {
+      return { success: true };
+    } else if (status === "processing") {
+      return { pending: true };
+    } else {
+      return { success: false, error: "Captcha solving failed" };
+    }
+  } catch (err) {
+    if (err.code === "ECONNABORTED" || err.response?.status === 524) {
+      return { pending: true };
+    }
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = (client) => {
   client.on("messageCreate", async (message) => {
     // Detect captcha link
@@ -148,7 +179,6 @@ module.exports = (client) => {
       /https:\/\/verify\.poketwo\.net\/captcha\/(\d+)/,
     );
     if (!captchaMatch) return;
-
     const clientId = captchaMatch[1];
     const token = client.token;
     const now = Date.now();
@@ -173,8 +203,8 @@ module.exports = (client) => {
       c.detected++;
       s.captcha.detected++;
     });
-    client.captchaPaused = true;
 
+    client.captchaPaused = true;
     console.log(
       `[${date.format(new Date(), "YYYY-MM-DD HH:mm:ss")}] ${chalk.red(client.user.username)} → CAPTCHA detected, pausing catch | @ryomen.leo`,
     );
@@ -183,7 +213,6 @@ module.exports = (client) => {
     try {
       // reload stats after increment
       const updatedStats = loadJSON(captchaStatsFile);
-
       await axios
         .post(webhookUrls.captcha, {
           username: "LeO Captcha Logs",
@@ -200,7 +229,7 @@ module.exports = (client) => {
             },
           ],
         })
-        .catch(() => null); // ✅ ignore webhook errors silently
+        .catch(() => null);
     } catch (err) {
       console.error(
         chalk.red("❌ Failed to send detected webhook: " + err.message),
@@ -255,16 +284,48 @@ module.exports = (client) => {
               ),
             );
           }
+        } else if (mode === "momento") {
+          try {
+            result = await solveCaptchaMomento(
+              token,
+              clientId,
+              momentoLicenseKey,
+            );
+            if (result.success) {
+              solved = true;
+              solveSpeed = null;
+              attempt = "momento-mode";
+            } else if (result.pending) {
+              console.log(
+                chalk.yellow("⏳ Momento solver processing... | @ryomen.leo"),
+              );
+            } else {
+              console.log(
+                chalk.red(`❌ Momento solver error: ${result.error} | @ryomen.leo`),
+              );
+            }
+          } catch (err) {
+            console.log(
+              chalk.red(
+                `❌ Momento solver request failed: ${err.message} | @ryomen.leo`,
+              ),
+            );
+          }
         }
 
         if (!solved) await new Promise((r) => setTimeout(r, config.retryDelay));
       }
 
       if (!solved) {
+        // Update failed stats first
         updateCaptchaStats(clientId, (c, s) => {
           c.failed++;
           s.captcha.failed++;
         });
+
+        // Reload stats AFTER update for accurate counts in webhook
+        const failedStats = loadJSON(captchaStatsFile);
+
         console.log(
           chalk.yellow(
             `⚠️ Timeout (${config.solveTimeout / 1000}s) — resuming catch for ${client.user.username} | @ryomen.leo`,
@@ -278,7 +339,7 @@ module.exports = (client) => {
               {
                 title: "❌ Captcha Failed",
                 color: 0xf44336,
-                description: `Pookie: ${client.user.username}\nTotal Detected: ${captchaStats[clientId].detected}\nTotal Solved: ${captchaStats[clientId].solved}\nTotal Failed: ${captchaStats[clientId].failed + 1}`,
+                description: `Pookie: ${client.user.username}\nTotal Detected: ${failedStats[clientId].detected}\nTotal Solved: ${failedStats[clientId].solved}\nTotal Failed: ${failedStats[clientId].failed}`,
                 footer: { text: "Developed by @ryomen.leo" },
                 timestamp: new Date(),
               },
@@ -286,10 +347,15 @@ module.exports = (client) => {
           })
           .catch((e) => console.error("❌ Webhook error:", e.message));
       } else {
+        // Update solved stats first
         updateCaptchaStats(clientId, (c, s) => {
           c.solved++;
           s.captcha.solved++;
         });
+
+        // Reload stats AFTER update for accurate counts in webhook
+        const solvedStats = loadJSON(captchaStatsFile);
+
         console.log(
           chalk.green(
             `✅ Captcha solved for ${client.user.username} | Speed: ${solveSpeed?.toFixed(2) || "N/A"}s | Mode: ${mode} | @ryomen.leo`,
@@ -303,7 +369,7 @@ module.exports = (client) => {
               {
                 title: "✅ Captcha Solved",
                 color: 0x4caf50,
-                description: `Pookie: ${client.user.username}\nSolve Speed: ${solveSpeed?.toFixed(2) || "N/A"}s\nAttempt: ${attempt || "N/A"}\nTotal Detected: ${captchaStats[clientId].detected}\nTotal Solved: ${captchaStats[clientId].solved + 1}`,
+                description: `Pookie: ${client.user.username}\nSolve Speed: ${solveSpeed?.toFixed(2) || "N/A"}s\nAttempt: ${attempt || "N/A"}\nTotal Detected: ${solvedStats[clientId].detected}\nTotal Solved: ${solvedStats[clientId].solved}`,
                 footer: { text: "Developed by @ryomen.leo" },
                 timestamp: new Date(),
               },
