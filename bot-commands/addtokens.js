@@ -19,6 +19,41 @@ const ERROR_TYPES = {
   UNKNOWN: "Unknown error"
 };
 
+// Helper function to extract token from various formats
+function extractToken(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  // Check if line contains colons (email:pass:token or email:token format)
+  if (trimmed.includes(':')) {
+    const parts = trimmed.split(':');
+    
+    // Format: email:pass:token or email:password:token (3+ parts)
+    if (parts.length >= 3) {
+      // Token is the last part
+      const potentialToken = parts[parts.length - 1].trim();
+      if (TOKEN_REGEX.test(potentialToken)) {
+        return potentialToken;
+      }
+    }
+    
+    // Format: email:token (2 parts)
+    if (parts.length === 2) {
+      const potentialToken = parts[1].trim();
+      if (TOKEN_REGEX.test(potentialToken)) {
+        return potentialToken;
+      }
+    }
+  }
+  
+  // Format: token only (no colons)
+  if (TOKEN_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+  
+  return null;
+}
+
 module.exports = {
   name: "addtokens",
   description: "Add selfbot tokens and initialize them instantly with advanced monitoring",
@@ -87,9 +122,11 @@ module.exports = {
         try {
           const response = await fetch(attachment.url);
           const fileContent = await response.text();
-          newTokens = fileContent
-            .split(/[\r\n]+/)
-            .map((t) => t.trim())
+          const lines = fileContent.split(/[\r\n]+/);
+          
+          // Extract tokens from each line (supports email:pass:token, email:token, token)
+          newTokens = lines
+            .map(line => extractToken(line))
             .filter(Boolean);
         } catch (err) {
           return ctx.reply({
@@ -99,9 +136,9 @@ module.exports = {
         }
       } else if (stringInput) {
         // Handle both spaces and newlines in slash command input
-        newTokens = stringInput
-          .split(/[\s\n\r]+/)
-          .map((t) => t.trim())
+        const lines = stringInput.split(/[\s\n\r]+/);
+        newTokens = lines
+          .map(line => extractToken(line))
           .filter(Boolean);
       } else {
         return ctx.reply({
@@ -119,9 +156,9 @@ module.exports = {
       }
 
       // Split by spaces AND newlines (handles pasted text with newlines)
-      newTokens = input
-        .split(/[\s\n\r]+/)
-        .map((t) => t.trim())
+      const lines = input.split(/[\s\n\r]+/);
+      newTokens = lines
+        .map(line => extractToken(line))
         .filter(Boolean);
 
       if (newTokens.length === 0) {
@@ -172,7 +209,7 @@ module.exports = {
         { name: "🔄 Max Retries", value: `${MAX_RETRIES}`, inline: true }
       )
       .setDescription(toProcess > 0 ? "✅ Ready to process tokens..." : "⚠️ No new valid tokens to add.")
-      .setFooter({ text: "Processing will start automatically..." })
+      .setFooter({ text: "Processing will start automatically... | Supports: token, email:token, email:pass:token" })
       .setTimestamp();
 
     if (logChannel) {
