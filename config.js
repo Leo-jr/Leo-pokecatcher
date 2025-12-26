@@ -12,6 +12,7 @@ module.exports = {
   captcha: {
     mode: "leo", // use main API
     // mode: "shu", // use Shu API
+    // mode: "momento", //use momento API
     licenseKey: "LEO-CAPTCHA-KEY", //buy your key from @ryomen.leo
     API_URL: "http://api.leoispro.shop/solve",
     shuApiKey: "SHU-API-KEY",
